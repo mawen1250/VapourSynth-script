@@ -3,7 +3,7 @@ import havsfunc as haf
 import math
 
 
-def nnedi3_resample(input, target_width=None, target_height=None, src_left=None, src_top=None, src_width=None, src_height=None, csp=None, mats=None, matd=None, cplaces=None, cplaced=None, fulls=None, fulld=None, curves=None, curved=None, sigmoid=None, scale_thr=None, nsize=None, nns=None, qual=None, etype=None, pscrn=None, opt=None, fapprox=None, kernel=None, taps=None, a1=None, a2=None, chromak_up=None, chromak_up_taps=None, chromak_up_a1=None, chromak_up_a2=None, chromak_down=None, chromak_down_taps=None, chromak_down_a1=None, chromak_down_a2=None):
+def nnedi3_resample(input, target_width=None, target_height=None, src_left=None, src_top=None, src_width=None, src_height=None, csp=None, mats=None, matd=None, cplaces=None, cplaced=None, fulls=None, fulld=None, curves=None, curved=None, sigmoid=None, scale_thr=None, nsize=None, nns=None, qual=None, etype=None, pscrn=None, opt=None, fapprox=None, kernel=None, invks=False, taps=None, invkstaps=3, a1=None, a2=None, chromak_up=None, chromak_up_taps=None, chromak_up_a1=None, chromak_up_a2=None, chromak_down=None, chromak_down_invks=False, chromak_down_invkstaps=3, chromak_down_taps=None, chromak_down_a1=None, chromak_down_a2=None):
 	core = vs.get_core()
 	funcName = 'nnedi3_resample'
 	
@@ -132,7 +132,10 @@ def nnedi3_resample(input, target_width=None, target_height=None, src_left=None,
 	
 	# Parameters of fmtc.resample
 	if kernel is None:
-		kernel = 'spline36'
+		if not invks:
+			kernel = 'spline36'
+		else:
+			kernel = 'bilinear'
 	else:
 		kernel = kernel.lower()
 	if chromak_up is None:
@@ -227,7 +230,7 @@ def nnedi3_resample(input, target_width=None, target_height=None, src_left=None,
 	if scaleInGRAY or scaleInRGB:
 		if sGammaConv:
 			last = haf.GammaToLinear(last, fulls, fulls, curves, sigmoid=sigmoid)
-		last = nnedi3_resample_kernel(last, target_width, target_height, src_left, src_top, src_width, src_height, scale_thr, nsize, nns, qual, etype, pscrn, opt, fapprox, kernel, taps, a1, a2)
+		last = nnedi3_resample_kernel(last, target_width, target_height, src_left, src_top, src_width, src_height, scale_thr, nsize, nns, qual, etype, pscrn, opt, fapprox, kernel, taps, a1, a2, invks, invkstaps)
 		if dGammaConv:
 			last = haf.LinearToGamma(last, fulls, fulls, curved, sigmoid=sigmoid)
 	elif scaleInYUV:
@@ -270,7 +273,7 @@ def nnedi3_resample(input, target_width=None, target_height=None, src_left=None,
 		# Chroma subsampling
 		if dIsSubS:
 			dCSS = '411' if dHSubS == 4 else '420' if dVSubS == 2 else '422'
-			last = core.fmtc.resample(last, kernel=chromak_down, taps=chromak_down_taps, a1=chromak_down_a1, a2=chromak_down_a2, css=dCSS, fulls=fulld, cplaced=cplaced)
+			last = core.fmtc.resample(last, kernel=chromak_down, taps=chromak_down_taps, a1=chromak_down_a1, a2=chromak_down_a2, css=dCSS, fulls=fulld, cplaced=cplaced, invks=chromak_down_invks, invkstaps=chromak_down_invkstaps, planes=[2,3,3])
 		if dbitPS != 16:
 			last = core.fmtc.bitdepth(last, bits=dbitPS, fulls=fulld)
 	elif scaleInYUV and dIsRGB:
@@ -288,7 +291,7 @@ def nnedi3_resample(input, target_width=None, target_height=None, src_left=None,
 	return last
 
 
-def nnedi3_resample_kernel(input, target_width=None, target_height=None, src_left=None, src_top=None, src_width=None, src_height=None, scale_thr=None, nsize=None, nns=None, qual=None, etype=None, pscrn=None, opt=None, fapprox=None, kernel=None, taps=None, a1=None, a2=None):
+def nnedi3_resample_kernel(input, target_width=None, target_height=None, src_left=None, src_top=None, src_width=None, src_height=None, scale_thr=None, nsize=None, nns=None, qual=None, etype=None, pscrn=None, opt=None, fapprox=None, kernel=None, taps=None, a1=None, a2=None, invks=False, invkstaps=3):
 	core = vs.get_core()
 	
 	# Parameters of scaling
@@ -344,16 +347,16 @@ def nnedi3_resample_kernel(input, target_width=None, target_height=None, src_lef
 	
 	if hResample:
 		last = core.std.Transpose(last)
-		last = nnedi3_resample_kernel_vertical(last, target_width, src_left, src_width, scale_thr, nsize, nns, qual, etype, pscrn, opt, fapprox, kernel, taps, a1, a2)
+		last = nnedi3_resample_kernel_vertical(last, target_width, src_left, src_width, scale_thr, nsize, nns, qual, etype, pscrn, opt, fapprox, kernel, taps, a1, a2, invks, invkstaps)
 		last = core.std.Transpose(last)
 	if vResample:
-		last = nnedi3_resample_kernel_vertical(last, target_height, src_top, src_height, scale_thr, nsize, nns, qual, etype, pscrn, opt, fapprox, kernel, taps, a1, a2)
+		last = nnedi3_resample_kernel_vertical(last, target_height, src_top, src_height, scale_thr, nsize, nns, qual, etype, pscrn, opt, fapprox, kernel, taps, a1, a2, invks, invkstaps)
 	
 	# Output
 	return last
 
 
-def nnedi3_resample_kernel_vertical(input, target_height=None, src_top=None, src_height=None, scale_thr=None, nsize=None, nns=None, qual=None, etype=None, pscrn=None, opt=None, fapprox=None, kernel=None, taps=None, a1=None, a2=None):
+def nnedi3_resample_kernel_vertical(input, target_height=None, src_top=None, src_height=None, scale_thr=None, nsize=None, nns=None, qual=None, etype=None, pscrn=None, opt=None, fapprox=None, kernel=None, taps=None, a1=None, a2=None, invks=False, invkstaps=3):
 	core = vs.get_core()
 	
 	# Parameters of scaling
@@ -406,7 +409,10 @@ def nnedi3_resample_kernel_vertical(input, target_height=None, src_top=None, src
 	sh = src_height * eScale
 	
 	if h != last.height or sy != 0 or sh != last.height:
-		last = core.fmtc.resample(last, w, h, sx, sy, sw, sh, kernel=kernel, taps=taps, a1=a1, a2=a2)
+		if h < last.height and invks is True:
+			last = core.fmtc.resample(last, w, h, sx, sy, sw, sh, kernel=kernel, taps=taps, a1=a1, a2=a2, invks=True, invkstaps=invkstaps)
+		else:
+			last = core.fmtc.resample(last, w, h, sx, sy, sw, sh, kernel=kernel, taps=taps, a1=a1, a2=a2)
 	
 	# Output
 	return last

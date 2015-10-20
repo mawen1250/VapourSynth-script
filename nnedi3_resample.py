@@ -422,7 +422,7 @@ def nnedi3_rpow2_vertical(input, eTimes=1, field=1, nsize=None, nns=None, qual=N
 	core = vs.get_core()
 	
 	if eTimes >= 1:
-		last = core.nnedi3.nnedi3(input, field, True, True, True, True, nsize, nns, qual, etype, pscrn, opt, fapprox)
+		last = core.nnedi3.nnedi3(input, field=field, dh=True, nsize=nsize, nns=nns, qual=qual, etype=etype, pscrn=pscrn, opt=opt, fapprox=fapprox)
 		eTimes = eTimes - 1
 		field = 0
 	else:

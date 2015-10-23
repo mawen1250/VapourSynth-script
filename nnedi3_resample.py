@@ -441,7 +441,7 @@ def nnedi3_dh(input, field=1, nsize=None, nns=None, qual=None, etype=None, pscrn
     sSType = input.format.sample_type
     sbitPS = input.format.bits_per_sample
     
-    if sbitPS > 8:
+    if fast and sbitPS > 8:
         input8 = mvf.Depth(input, depth=8, sample=vs.INTEGER)
         nn = core.nnedi3.nnedi3(input8, field=field, dh=True, nsize=nsize, nns=nns, qual=qual, etype=etype, pscrn=pscrn, opt=opt, fapprox=fapprox)
         cubic = core.fmtc.resample(input, scaleh=1, scalev=2, kernel="bicubic", a1=0, a2=0.5, center=True)

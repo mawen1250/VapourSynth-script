@@ -4,7 +4,7 @@ import mvsfunc as mvf
 import math
 
 
-def nnedi3_resample(input, target_width=None, target_height=None, src_left=None, src_top=None, src_width=None, src_height=None, csp=None, mats=None, matd=None, cplaces=None, cplaced=None, fulls=None, fulld=None, curves=None, curved=None, sigmoid=None, scale_thr=None, nsize=None, nns=None, qual=None, etype=None, pscrn=None, opt=None, fapprox=None, kernel=None, invks=False, taps=None, invkstaps=3, a1=None, a2=None, chromak_up=None, chromak_up_taps=None, chromak_up_a1=None, chromak_up_a2=None, chromak_down=None, chromak_down_invks=False, chromak_down_invkstaps=3, chromak_down_taps=None, chromak_down_a1=None, chromak_down_a2=None, fast=True):
+def nnedi3_resample(input, target_width=None, target_height=None, src_left=None, src_top=None, src_width=None, src_height=None, csp=None, mats=None, matd=None, cplaces=None, cplaced=None, fulls=None, fulld=None, curves=None, curved=None, sigmoid=None, scale_thr=None, nsize=None, nns=None, qual=None, etype=None, pscrn=None, opt=None, fapprox=None, kernel=None, invks=False, taps=None, invkstaps=3, a1=None, a2=None, chromak_up=None, chromak_up_taps=None, chromak_up_a1=None, chromak_up_a2=None, chromak_down=None, chromak_down_invks=False, chromak_down_invkstaps=3, chromak_down_taps=None, chromak_down_a1=None, chromak_down_a2=None, fast=None):
     core = vs.get_core()
     funcName = 'nnedi3_resample'
     
@@ -292,7 +292,7 @@ def nnedi3_resample(input, target_width=None, target_height=None, src_left=None,
     return last
 
 
-def nnedi3_resample_kernel(input, target_width=None, target_height=None, src_left=None, src_top=None, src_width=None, src_height=None, scale_thr=None, nsize=None, nns=None, qual=None, etype=None, pscrn=None, opt=None, fapprox=None, kernel=None, taps=None, a1=None, a2=None, invks=False, invkstaps=3, fast=True):
+def nnedi3_resample_kernel(input, target_width=None, target_height=None, src_left=None, src_top=None, src_width=None, src_height=None, scale_thr=None, nsize=None, nns=None, qual=None, etype=None, pscrn=None, opt=None, fapprox=None, kernel=None, taps=None, a1=None, a2=None, invks=False, invkstaps=3, fast=None):
     core = vs.get_core()
     
     # Parameters of scaling
@@ -357,7 +357,7 @@ def nnedi3_resample_kernel(input, target_width=None, target_height=None, src_lef
     return last
 
 
-def nnedi3_resample_kernel_vertical(input, target_height=None, src_top=None, src_height=None, scale_thr=None, nsize=None, nns=None, qual=None, etype=None, pscrn=None, opt=None, fapprox=None, kernel=None, taps=None, a1=None, a2=None, invks=False, invkstaps=3, fast=True):
+def nnedi3_resample_kernel_vertical(input, target_height=None, src_top=None, src_height=None, scale_thr=None, nsize=None, nns=None, qual=None, etype=None, pscrn=None, opt=None, fapprox=None, kernel=None, taps=None, a1=None, a2=None, invks=False, invkstaps=3, fast=None):
     core = vs.get_core()
     
     # Parameters of scaling
@@ -419,11 +419,11 @@ def nnedi3_resample_kernel_vertical(input, target_height=None, src_top=None, src
     return last
 
 
-def nnedi3_rpow2_vertical(input, eTimes=1, field=1, nsize=None, nns=None, qual=None, etype=None, pscrn=None, opt=None, fapprox=None, fast=True):
+def nnedi3_rpow2_vertical(input, eTimes=1, field=1, nsize=None, nns=None, qual=None, etype=None, pscrn=None, opt=None, fapprox=None, fast=None):
     core = vs.get_core()
     
     if eTimes >= 1:
-        last = nnedi3_dh(input, field=field, nsize=nsize, nns=nns, qual=qual, etype=etype, pscrn=pscrn, opt=opt, fapprox=fapprox)
+        last = nnedi3_dh(input, field, nsize, nns, qual, etype, pscrn, opt, fapprox, fast)
         eTimes = eTimes - 1
         field = 0
     else:
@@ -435,16 +435,18 @@ def nnedi3_rpow2_vertical(input, eTimes=1, field=1, nsize=None, nns=None, qual=N
         return last
 
 
-def nnedi3_dh(input, field=1, nsize=None, nns=None, qual=None, etype=None, pscrn=None, opt=None, fapprox=None, fast=True):
+def nnedi3_dh(input, field=1, nsize=None, nns=None, qual=None, etype=None, pscrn=None, opt=None, fapprox=None, fast=None):
     core = vs.get_core()
     
     sSType = input.format.sample_type
     sbitPS = input.format.bits_per_sample
+    if fast is None:
+        fast = True
     
-    if fast and sbitPS > 8:
+    if (pscrn is not None and pscrn > 1) or (fast and sbitPS > 8):
         input8 = mvf.Depth(input, depth=8, sample=vs.INTEGER)
         nn = core.nnedi3.nnedi3(input8, field=field, dh=True, nsize=nsize, nns=nns, qual=qual, etype=etype, pscrn=pscrn, opt=opt, fapprox=fapprox)
-        cubic = core.fmtc.resample(input, scaleh=1, scalev=2, kernel="bicubic", a1=0, a2=0.5, center=True)
-        return mvf.LimitFilter(mvf.Depth(cubic, depth=sbitPS, sample=sSType), mvf.Depth(nn, depth=sbitPS, sample=sSType), thr=1.0, elast=2.0)
+        lr = core.fmtc.resample(input, scaleh=1, scalev=2, kernel="bicubic", a1=0, a2=0.5, center=False)
+        return mvf.LimitFilter(mvf.Depth(lr, depth=sbitPS, sample=sSType), mvf.Depth(nn, depth=sbitPS, sample=sSType), thr=1.0, elast=2.0)
     else:
         return core.nnedi3.nnedi3(input, field=field, dh=True, nsize=nsize, nns=nns, qual=qual, etype=etype, pscrn=pscrn, opt=opt, fapprox=fapprox)

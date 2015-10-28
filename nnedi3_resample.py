@@ -438,15 +438,18 @@ def nnedi3_rpow2_vertical(input, eTimes=1, field=1, nsize=None, nns=None, qual=N
 def nnedi3_dh(input, field=1, nsize=None, nns=None, qual=None, etype=None, pscrn=None, opt=None, fapprox=None, fast=None):
     core = vs.get_core()
     
-    sSType = input.format.sample_type
-    sbitPS = input.format.bits_per_sample
+    sFormat = input.format
+    sSType = sFormat.sample_type
+    sbitPS = sFormat.bits_per_sample
+    sVSubS = 1 << sFormat.subsampling_h
+    
     if fast is None:
         fast = True
     
-    if (pscrn is not None and pscrn > 1) or (fast and sbitPS > 8):
+    if (field == 0 or field == 1) and ((pscrn is not None and pscrn > 1) or (fast and sbitPS > 8)):
         input8 = mvf.Depth(input, depth=8, sample=vs.INTEGER)
         nn = core.nnedi3.nnedi3(input8, field=field, dh=True, nsize=nsize, nns=nns, qual=qual, etype=etype, pscrn=pscrn, opt=opt, fapprox=fapprox)
-        lr = core.fmtc.resample(input, scaleh=1, scalev=2, kernel="bicubic", a1=0, a2=0.5, center=False)
+        lr = core.fmtc.resample(input, sy=[-0.5, -0.5 * sVSubS] if field==0 else 0, scaleh=1, scalev=2, kernel="bicubic", a1=0, a2=0.5, center=False)
         return mvf.LimitFilter(mvf.Depth(lr, depth=sbitPS, sample=sSType), mvf.Depth(nn, depth=sbitPS, sample=sSType), thr=1.0, elast=2.0)
     else:
         return core.nnedi3.nnedi3(input, field=field, dh=True, nsize=nsize, nns=nns, qual=qual, etype=etype, pscrn=pscrn, opt=opt, fapprox=fapprox)

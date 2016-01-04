@@ -1,5 +1,4 @@
 import vapoursynth as vs
-import havsfunc as haf
 import mvsfunc as mvf
 import math
 
@@ -10,7 +9,7 @@ def nnedi3_resample(input, target_width=None, target_height=None, src_left=None,
     
     # Get property about input clip
     if not isinstance(input, vs.VideoNode):
-        raise ValueError(funcName + ': This is not a clip!')
+        raise TypeError(funcName + ': This is not a clip!')
     
     sFormat = input.format
     
@@ -170,11 +169,12 @@ def nnedi3_resample(input, target_width=None, target_height=None, src_left=None,
     hReSubS = dHSubS != sHSubS
     vReSubS = dVSubS != sVSubS
     reSubS = hReSubS or vReSubS
+    sigmoid = sigmoid and resample
     sGammaConv = curves != 'linear'
     dGammaConv = curved != 'linear'
-    gammaCorrection = (sGammaConv or dGammaConv) and resample
+    gammaConv = (sGammaConv or dGammaConv or sigmoid) and (resample or curved != curves)
     scaleInGRAY = sIsGRAY or dIsGRAY
-    scaleInYUV = not scaleInGRAY and mats == matd and not gammaCorrection and (reSubS or (sIsYUV and dIsYUV))
+    scaleInYUV = not scaleInGRAY and mats == matd and not gammaConv and (reSubS or (sIsYUV and dIsYUV))
     scaleInRGB = not scaleInGRAY and not scaleInYUV
     # If matrix conversion or gamma correction is applied, scaling will be done in RGB. Otherwise, if at least one of input&output clip is RGB and no chroma subsampling is involved, scaling will be done in RGB.
     
@@ -187,7 +187,7 @@ def nnedi3_resample(input, target_width=None, target_height=None, src_left=None,
     dVCPlace = 0
     
     # Convert depth to 16-bit
-    last = core.fmtc.bitdepth(input, bits=16, fulls=fulls) if sbitPS != 16 else input
+    last = mvf.Depth(input, depth=16, fulls=fulls)
     
     # Color space conversion before scaling
     if scaleInGRAY and sIsYUV:
@@ -229,11 +229,15 @@ def nnedi3_resample(input, target_width=None, target_height=None, src_left=None,
     
     # Scaling
     if scaleInGRAY or scaleInRGB:
-        if sGammaConv:
-            last = haf.GammaToLinear(last, fulls, fulls, curves, sigmoid=sigmoid)
+        if gammaConv and sGammaConv:
+            last = GammaToLinear(last, fulls, fulls, curves, sigmoid=sigmoid)
+        elif sigmoid:
+            last = SigmoidInverse(last)
         last = nnedi3_resample_kernel(last, target_width, target_height, src_left, src_top, src_width, src_height, scale_thr, nsize, nns, qual, etype, pscrn, opt, fapprox, kernel, taps, a1, a2, invks, invkstaps, fast=fast)
-        if dGammaConv:
-            last = haf.LinearToGamma(last, fulls, fulls, curved, sigmoid=sigmoid)
+        if gammaConv and dGammaConv:
+            last = LinearToGamma(last, fulls, fulls, curved, sigmoid=sigmoid)
+        elif sigmoid:
+            last = SigmoidDirect(last)
     elif scaleInYUV:
         # Separate planes
         Y = core.std.ShufflePlanes(last, [0], vs.GRAY)
@@ -257,13 +261,11 @@ def nnedi3_resample(input, target_width=None, target_height=None, src_left=None,
     if scaleInGRAY and dIsYUV:
         dCw = target_width // dHSubS
         dCh = target_height // dVSubS
-        if dbitPS != 16 or fulld != fulls:
-            last = core.fmtc.bitdepth(last, bits=dbitPS, fulls=fulls, fulld=fulld)
+        last = mvf.Depth(last, depth=dbitPS, fulls=fulls, fulld=fulld)
         blkUV = core.std.BlankClip(last, dCw, dCh, color=[1 << (dbitPS - 1)])
         last = core.std.ShufflePlanes([last, blkUV, blkUV], [0, 0, 0], dColorFamily)
     elif scaleInGRAY and dIsRGB:
-        if dbitPS != 16 or fulld != fulls:
-            last = core.fmtc.bitdepth(last, bits=dbitPS, fulls=fulls, fulld=fulld)
+        last = mvf.Depth(last, depth=dbitPS, fulls=fulls, fulld=fulld)
         last = core.std.ShufflePlanes([last, last, last], [0, 0, 0], dColorFamily)
     elif scaleInRGB and dIsYUV:
         # Matrix conversion
@@ -275,18 +277,16 @@ def nnedi3_resample(input, target_width=None, target_height=None, src_left=None,
         if dIsSubS:
             dCSS = '411' if dHSubS == 4 else '420' if dVSubS == 2 else '422'
             last = core.fmtc.resample(last, kernel=chromak_down, taps=chromak_down_taps, a1=chromak_down_a1, a2=chromak_down_a2, css=dCSS, fulls=fulld, cplaced=cplaced, invks=chromak_down_invks, invkstaps=chromak_down_invkstaps, planes=[2,3,3])
-        if dbitPS != 16:
-            last = core.fmtc.bitdepth(last, bits=dbitPS, fulls=fulld)
+        last = mvf.Depth(last, depth=dbitPS, fulls=fulld)
     elif scaleInYUV and dIsRGB:
         # Matrix conversion
         if mats == '2020cl':
             last = core.fmtc.matrix2020cl(last, fulls)
         else:
             last = core.fmtc.matrix(last, mat=mats, fulls=fulls, fulld=True, col_fam=vs.RGB, singleout=-1)
-        if dbitPS != 16 or fulld != True:
-            last = core.fmtc.bitdepth(last, bits=dbitPS, fulls=True, fulld=fulld)
-    elif dbitPS != 16 or fulld != fulls:
-        last = core.fmtc.bitdepth(last, bits=dbitPS, fulls=fulls, fulld=fulld)
+        last = mvf.Depth(last, depth=dbitPS, fulls=True, fulld=fulld)
+    else:
+        last = mvf.Depth(last, depth=dbitPS, fulls=fulls, fulld=fulld)
     
     # Output
     return last
@@ -453,3 +453,115 @@ def nnedi3_dh(input, field=1, nsize=None, nns=None, qual=None, etype=None, pscrn
         return mvf.LimitFilter(mvf.Depth(lr, depth=sbitPS, sample=sSType), mvf.Depth(nn, depth=sbitPS, sample=sSType), thr=1.0, elast=2.0)
     else:
         return core.nnedi3.nnedi3(input, field=field, dh=True, nsize=nsize, nns=nns, qual=qual, etype=etype, pscrn=pscrn, opt=opt, fapprox=fapprox)
+
+
+## Gamma conversion functions from HAvsFunc-r18
+# Convert the luma channel to linear light
+def GammaToLinear(src, fulls=True, fulld=True, curve='709', planes=[0, 1, 2], gcor=1., sigmoid=False, thr=0.5, cont=6.5):
+    if not isinstance(src, vs.VideoNode) or src.format.bits_per_sample != 16:
+        raise ValueError('GammaToLinear: This is not a 16-bit clip')
+    
+    return LinearAndGamma(src, False, fulls, fulld, curve.lower(), planes, gcor, sigmoid, thr, cont)
+
+# Convert back a clip to gamma-corrected luma
+def LinearToGamma(src, fulls=True, fulld=True, curve='709', planes=[0, 1, 2], gcor=1., sigmoid=False, thr=0.5, cont=6.5):
+    if not isinstance(src, vs.VideoNode) or src.format.bits_per_sample != 16:
+        raise ValueError('LinearToGamma: This is not a 16-bit clip')
+    
+    return LinearAndGamma(src, True, fulls, fulld, curve.lower(), planes, gcor, sigmoid, thr, cont)
+
+def LinearAndGamma(src, l2g_flag, fulls, fulld, curve, planes, gcor, sigmoid, thr, cont):
+    core = vs.get_core()
+    
+    if curve == 'srgb':
+        c_num = 0
+    elif curve in ['709', '601', '170']:
+        c_num = 1
+    elif curve == '240':
+        c_num = 2
+    elif curve == '2020':
+        c_num = 3
+    else:
+        raise ValueError('LinearAndGamma: wrong curve value')
+    
+    if src.format.color_family == vs.GRAY:
+        planes = [0]
+    
+    #                 BT-709/601
+    #        sRGB     SMPTE 170M   SMPTE 240M   BT-2020
+    k0    = [0.04045, 0.081,       0.0912,      0.08145][c_num]
+    phi   = [12.92,   4.5,         4.0,         4.5][c_num]
+    alpha = [0.055,   0.099,       0.1115,      0.0993][c_num]
+    gamma = [2.4,     2.22222,     2.22222,     2.22222][c_num]
+    
+    def g2l(x):
+        expr = x / 65536 if fulls else (x - 4096) / 56064
+        if expr <= k0:
+            expr /= phi
+        else:
+            expr = ((expr + alpha) / (1 + alpha)) ** gamma
+        if gcor != 1 and expr >= 0:
+            expr **= gcor
+        if sigmoid:
+            x0 = 1 / (1 + math.exp(cont * thr))
+            x1 = 1 / (1 + math.exp(cont * (thr - 1)))
+            expr = thr - math.log(max(1 / max(expr * (x1 - x0) + x0, 0.000001) - 1, 0.000001)) / cont
+        if fulld:
+            return min(max(round(expr * 65536), 0), 65535)
+        else:
+            return min(max(round(expr * 56064 + 4096), 0), 65535)
+    
+    # E' = (E <= k0 / phi)   ?   E * phi   :   (E ^ (1 / gamma)) * (alpha + 1) - alpha
+    def l2g(x):
+        expr = x / 65536 if fulls else (x - 4096) / 56064
+        if sigmoid:
+            x0 = 1 / (1 + math.exp(cont * thr))
+            x1 = 1 / (1 + math.exp(cont * (thr - 1)))
+            expr = (1 / (1 + math.exp(cont * (thr - expr))) - x0) / (x1 - x0)
+        if gcor != 1 and expr >= 0:
+            expr **= gcor
+        if expr <= k0 / phi:
+            expr *= phi
+        else:
+            expr = expr ** (1 / gamma) * (alpha + 1) - alpha
+        if fulld:
+            return min(max(round(expr * 65536), 0), 65535)
+        else:
+            return min(max(round(expr * 56064 + 4096), 0), 65535)
+    
+    return core.std.Lut(src, planes=planes, function=l2g if l2g_flag else g2l)
+
+# Apply the inverse sigmoid curve to a clip in linear luminance
+def SigmoidInverse(src, thr=0.5, cont=6.5, planes=[0, 1, 2]):
+    core = vs.get_core()
+    
+    if not isinstance(src, vs.VideoNode) or src.format.bits_per_sample != 16:
+        raise ValueError('SigmoidInverse: This is not a 16-bit clip')
+    
+    if src.format.color_family == vs.GRAY:
+        planes = [0]
+    
+    def get_lut(x):
+        x0 = 1 / (1 + math.exp(cont * thr))
+        x1 = 1 / (1 + math.exp(cont * (thr - 1)))
+        return min(max(round((thr - math.log(max(1 / max(x / 65536 * (x1 - x0) + x0, 0.000001) - 1, 0.000001)) / cont) * 65536), 0), 65535)
+    
+    return core.std.Lut(src, planes=planes, function=get_lut)
+
+# Convert back a clip to linear luminance
+def SigmoidDirect(src, thr=0.5, cont=6.5, planes=[0, 1, 2]):
+    core = vs.get_core()
+    
+    if not isinstance(src, vs.VideoNode) or src.format.bits_per_sample != 16:
+        raise ValueError('SigmoidDirect: This is not a 16-bit clip')
+    
+    if src.format.color_family == vs.GRAY:
+        planes = [0]
+    
+    def get_lut(x):
+        x0 = 1 / (1 + math.exp(cont * thr))
+        x1 = 1 / (1 + math.exp(cont * (thr - 1)))
+        return min(max(round(((1 / (1 + math.exp(cont * (thr - x / 65536))) - x0) / (x1 - x0)) * 65536), 0), 65535)
+    
+    return core.std.Lut(src, planes=planes, function=get_lut)
+## Gamma conversion functions from HAvsFunc-r18
